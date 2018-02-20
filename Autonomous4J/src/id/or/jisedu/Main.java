@@ -2,144 +2,149 @@ package id.or.jisedu;
 
 import de.yadrone.base.ARDrone;
 import de.yadrone.base.IARDrone;
-import de.yadrone.base.command.CommandManager;
+import id.or.jisedu.ui.RingProgressIndicator;
+import javafx.application.Application;
+import javafx.event.EventHandler;
+import javafx.geometry.Pos;
+import javafx.scene.Scene;
+import javafx.scene.control.Button;
+import javafx.scene.control.Label;
+import javafx.scene.layout.VBox;
+import javafx.stage.Stage;
+import javafx.stage.WindowEvent;
 
-import javax.swing.*;
-import java.awt.*;
 import java.awt.image.BufferedImage;
+import java.util.concurrent.TimeUnit;
 
-public class Main extends JFrame {
-  
-  private BufferedImage image = null;
-  JLabel vertvel, rotvel;
+
+public class Main extends Application {
+  private boolean movement = true;
+  private final int MAXROT = 25;
+  private int noneFound = 0;
+  private final IARDrone DRONE = new ARDrone();
+  private RingProgressIndicator rpi = new RingProgressIndicator();
+  private Label status = new Label("Landed");
+  private Label direction = new Label("N/A");
+  private Button statusButton = new Button("Operation");
+  private boolean takeoff = false;
   
   public static void main(String[] args) {
-    new Main();
+    launch(args);
   }
   
-  private Main() {
-    super("YADrone");
-    rotvel = new JLabel();
-    vertvel = new JLabel();
-    vertvel.setText("vertvel");
-    rotvel.setText("rotvel");
-    add(rotvel);
-    add(vertvel);
-    rotvel.setAlignmentX(200);
-    rotvel.setAlignmentY(200);
-    vertvel.setAlignmentX(200);
-    vertvel.setAlignmentY(400);
-    setSize(640, 360);
-    setVisible(true);
+  public void start(Stage STAGE) throws Exception {
+    STAGE.setTitle("Drone Command Manager");
+    
+    VBox vbox = new VBox(10);
+    vbox.setAlignment(Pos.CENTER);
+    
+    Scene s = new Scene(vbox, 800, 600);
+    
+    STAGE.setScene(s);
+    STAGE.show();
+    rpi.setRingWidth(300);
+    rpi.makeIndeterminate();
+    rpi.setProgress(0);
+    vbox.getChildren().addAll(rpi, direction, status, statusButton);
+    droneInfo();
+    STAGE.setOnCloseRequest(new EventHandler<WindowEvent>() {
+      public void handle(WindowEvent we) {
+        System.exit(0);
+      }
+    });
+    statusButton.setOnAction(e -> {
+      if (!takeoff) {
+        DRONE.getCommandManager().takeOff();
+        DRONE.setHorizontalCamera();
+        DRONE.getVideoManager().addImageListener(this::processImage);
+        status.setText("Taken Off");
+        statusButton.setText("Land and Stop");
+        takeoff = true;
+      } else {
+        DRONE.landing();
+        statusButton.setText("Landed");
+        System.exit(0);
+      }
+    });
+    
+  }
+  
+  private void droneInfo() throws Exception {
+    DRONE.start();
+  }
+  
+  private void processImage(BufferedImage image) {
     try {
-      droneInfo();
+      if (movement) findRed(image);
     } catch (Exception e) {
       e.printStackTrace();
     }
   }
   
-  public void paint(Graphics g) {
-    try {
-      if (image != null) {
-        image = resize(image);
-        g.drawImage(image, 0, 30, image.getWidth(), image.getHeight(), null);
-        image = printAllRed(image);
-        g.drawImage(image, 60, 30, image.getWidth(), image.getHeight(), null);
-      }
-    } catch (Exception ignore) {
-    }
-  }
-  
-  private IARDrone drone;
-  
-  private void droneInfo() throws Exception {
-    drone = new ARDrone();
-    drone.start();
-    CommandManager cmd = drone.getCommandManager();
-    drone.setHorizontalCamera();
-    drone.getVideoManager().addImageListener(newImage -> {
-      image = newImage;
-      SwingUtilities.invokeLater(this::repaint);
-    });
-  }
-  
-  private BufferedImage resize(BufferedImage img) {
-    int w = img.getWidth();
-    int h = img.getHeight();
-    BufferedImage dimg = new BufferedImage(58, 33, img.getType());
-    Graphics2D g = dimg.createGraphics();
-    g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
-    g.drawImage(img, 0, 0, 58, 33, 0, 0, w, h, null);
-    g.dispose();
-    return dimg;
-  }
-  
-  private Color white = new Color(255, 255, 255);
-  private Color bleck = new Color(0, 0, 0);
-  
-  private BufferedImage printAllRed(BufferedImage image) throws Exception {
-    float totx = 0;
-    float toty = 0;
-    int counter = 0;
-    BufferedImage bufferedImage = new BufferedImage(58, 33, BufferedImage.TYPE_INT_RGB);
-    for (int x = 0; x < image.getWidth(); x++) {
-      for (int y = 0; y < image.getHeight(); y++) {
-        final int clr = image.getRGB(x, y);
-        final float r = (clr & 0x00ff0000) >> 16;
-        final float g = (clr & 0x0000ff00) >> 8;
-        final float b = clr & 0x000000ff;
-        if (r >= (g + b) / 2 && r > 116 && g < 72 && b < 72) {
-          bufferedImage.setRGB(x, y, white.getRGB());
-          totx += x;
-          toty += y;
-          counter++;
-        } else if (r >= 120) {
-          bufferedImage.setRGB(x, y, bleck.getRGB());
+  private void findRed(BufferedImage rawImage) throws Exception {
+    float totalX = 0;
+    int whitePxls = 0;
+    float bestX;
+    
+    for (int x = 0; x < rawImage.getWidth(); x++) {
+      for (int y = 0; y < rawImage.getHeight(); y++) {
+        final int clr = rawImage.getRGB(x, y);
+        final float redPxls = (clr & 0x00ff0000) >> 16;
+        final float greenPxls = (clr & 0x0000ff00) >> 8;
+        final float bluePxls = clr & 0x000000ff;
+        if (redPxls >= (greenPxls + bluePxls) / 2 && redPxls > 116 && greenPxls < 72 && bluePxls < 72) {
+          totalX += x;
+          whitePxls++;
         }
       }
     }
-    float avgx;
-    float avgy;
-    int maxrot = 70;
-    int maxvert = 70;
-    int maxhoriz = 20;
-    float rotvel;
-    float vertvel;
-    float horizvel;
-    if (counter >= 1) {
-      avgx = totx / counter;
-      avgy = toty / counter;
-    } else {
-      avgx = image.getWidth() / 2;
-      avgy = image.getHeight() / 2;
-    }
-    bufferedImage.setRGB((int) avgx, (int) avgy, (new Color(255, 0, 0)).getRGB());
-    avgx = avgx - (image.getWidth() / 2);
-    avgy = 0 - (avgy - (image.getHeight() / 2));
-    rotvel = (avgx / (image.getWidth() / 2)) * maxrot;
-    vertvel = (avgy / (image.getHeight() / 2)) * maxvert;
-    this.rotvel.setText("rotvel: " + rotvel);
-    this.rotvel.setText("vertvel: " + vertvel);
+    if (whitePxls >= 1) bestX = totalX / whitePxls;
+    else bestX = rawImage.getWidth() / 2;
     
-    return bufferedImage;
+    usePxls(rawImage, bestX);
   }
   
-  private void moveDrone(int rotvel, int vertvel) {
-    if (rotvel != 0) {
-      if (rotvel > 0) {
-        drone.getCommandManager().spinRight(rotvel);
-      } else {
-        drone.getCommandManager().spinLeft(Math.abs(rotvel));
-      }
+  
+  private void usePxls(BufferedImage image, float bestX) {
+    bestX = bestX - (image.getWidth() / 2);
+    final int rotvel = (int) (bestX / (image.getWidth() / 2)) * MAXROT;
+    
+    try {
+      moveDrone(rotvel);
+    } catch (Exception e) {
+      e.printStackTrace();
     }
-    if (vertvel == 0) {
+  }
+  
+  private void moveDrone(int rotvel) throws Exception {
+    movement = false;
+    
+    if (rotvel == 0) {
+      noneFound++;
+      DRONE.hover();
+      rpi.setProgress(0);
+      status.setText("Tracking");
+      direction.setText("Hovering");
+      TimeUnit.MILLISECONDS.sleep(100);
+      movement = true;
       return;
     }
-    if (vertvel > 0) {
-      drone.getCommandManager().up(vertvel);
+    
+    if (rotvel > 0) {
+      DRONE.getCommandManager().spinRight(rotvel).doFor(10);
+      direction.setText("spinRight");
     } else {
-      drone.getCommandManager().down(Math.abs(vertvel));
+      direction.setText("spinLeft");
+      DRONE.getCommandManager().spinLeft(Math.abs(rotvel)).doFor(10);
     }
+    
+    rpi.setProgress(100 * Math.abs(rotvel) / MAXROT);
+    status.setText("Tracking");
+    
+    
+    TimeUnit.MILLISECONDS.sleep(100);
+    DRONE.hover();
+    movement = true;
   }
   
   
