@@ -1,0 +1,8 @@
+<component name="ArtifactManager">
+  <artifact type="jar" build-on-make="true" name="DroneSim">
+    <output-path>$USER_HOME$/Desktop</output-path>
+    <root id="archive" name="DroneSim.jar">
+      <element id="module-output" name="DroneSim" />
+    </root>
+  </artifact>
+</component>

@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/Autonomous4J/Autonomous4J.iml" filepath="$PROJECT_DIR$/Autonomous4J/Autonomous4J.iml" />
+      <module fileurl="file://$PROJECT_DIR$/DroneSim.iml" filepath="$PROJECT_DIR$/DroneSim.iml" />
     </modules>
   </component>
 </project>
